@@ -1,0 +1,1061 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis 
+} from 'recharts';
+import { 
+  Save, History, FileText, Activity, Users, Clock, 
+  TrendingUp, MessageCircle, AlertCircle, Copy, Trash2, Plus, ChevronRight, X, Check,
+  ClipboardList, User, Calendar, Award, Download, Loader2, Image as ImageIcon
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken 
+} from 'firebase/auth';
+import { 
+  getFirestore, collection, addDoc, query, orderBy, onSnapshot, 
+  doc, deleteDoc, updateDoc, serverTimestamp 
+} from 'firebase/firestore';
+
+// --- Firebase Configuration ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// --- Constants & KPI Definitions ---
+const BRANCHES = ["松江所", "中山所"];
+const MONTHS = Array.from({ length: 12 }, (_, i) => `${i + 1} 月`);
+
+// --- Therapist Database ---
+const THERAPISTS = [
+  // OT 職能治療師
+  { 
+    name: '鍾孟修', 
+    title: '職能治療師', 
+    type: 'OT', 
+    avatar: 'https://adlers.tw/wp-content/uploads/2021/03/08161275%E6%8B%B7%E8%B2%9D.jpg' 
+  },
+  { 
+    name: '鄭凱文', 
+    title: '職能治療師', 
+    type: 'OT', 
+    avatar: 'https://adlers.tw/wp-content/uploads/2021/05/08162446%E6%8B%B7%E8%B2%9D.jpg' 
+  },
+  
+  // PT 物理治療師
+  { 
+    name: '陳胤甫', 
+    title: '物理治療師', 
+    type: 'PT', 
+    avatar: 'https://adlers.tw/wp-content/uploads/2021/05/08162364%E6%8B%B7%E8%B2%9D.jpg'
+  },
+  { 
+    name: '謝迪亞', 
+    title: '物理治療師', 
+    type: 'PT', 
+    avatar: 'https://adlers.tw/wp-content/uploads/2021/05/08163287%E6%8B%B7%E8%B2%9D.jpg' 
+  },
+  { 
+    name: '巫佳倫', 
+    title: '物理治療師', 
+    type: 'PT', 
+    avatar: 'https://adlers.tw/wp-content/uploads/2021/03/08162832%E6%8B%B7%E8%B2%9D.jpg' 
+  },
+  { 
+    name: '許晃嘉', 
+    title: '物理治療師', 
+    type: 'PT', 
+    avatar: 'https://adlers.tw/wp-content/uploads/2023/03/%E8%A8%B1%E6%99%83%E5%98%89-%E7%89%A9%E7%90%86%E6%B2%BB%E7%99%82%E5%B8%AB.jpg' 
+  },
+  { 
+    name: '鄭之姸', 
+    title: '物理治療師', 
+    type: 'PT', 
+    avatar: 'https://adlers.tw/wp-content/uploads/2025/07/%E9%84%AD%E4%B9%8B%E5%A7%B8%E5%BD%A2%E8%B1%A1%E7%85%A72.jpg' 
+  },
+  { 
+    name: '葉羽庭', 
+    title: '物理治療師', 
+    type: 'PT', 
+    avatar: 'https://adlers.tw/wp-content/uploads/2024/04/%E8%91%89%E7%BE%BD%E5%BA%AD.jpg' 
+  },
+  { 
+    name: '陳竫沂', 
+    title: '物理治療師', 
+    type: 'PT', 
+    avatar: 'https://adlers.tw/wp-content/uploads/2024/08/%E9%99%B3%E7%AB%AB%E6%B2%82%E7%89%A9%E7%90%86%E6%B2%BB%E7%99%82%E5%B8%AB3.jpg.png' 
+  },
+];
+
+// KPI Configuration with logic for status
+const KPI_CONFIG = [
+  { 
+    id: 'occupancy', 
+    label: '滿班率', 
+    unit: '%', 
+    target: 80, 
+    type: 'higher_better',
+    desc: '當月實際看診時段 ÷ 可排時段',
+    isPercentage: true 
+  },
+  { 
+    id: 'newCases', 
+    label: '新增個案數', 
+    unit: '人', 
+    target: 15, 
+    type: 'higher_better',
+    desc: '本月第一次來找你的新個案'
+  },
+  { 
+    id: 'regularClients', 
+    label: '固定客群數', 
+    unit: '人', 
+    target: 30, 
+    type: 'higher_better',
+    desc: '持續回來追蹤或保養的個案'
+  },
+  { 
+    id: 'totalHours', 
+    label: '總治療時數', 
+    unit: 'hr', 
+    target: 120, 
+    type: 'higher_better',
+    desc: '本月實際治療總時數'
+  },
+  { 
+    id: 'conversionRate', 
+    label: '問診轉換率', 
+    unit: '%', 
+    target: 60, 
+    type: 'higher_better',
+    desc: '從諮詢/詢問到實際開始療程的比例',
+    isPercentage: true
+  },
+  { 
+    id: 'returnRate', 
+    label: '回診率', 
+    unit: '%', 
+    target: 70, 
+    type: 'higher_better',
+    desc: '有沒有願意再回來繼續療程',
+    isPercentage: true
+  },
+  { 
+    id: 'satisfaction', 
+    label: '平均滿意度', 
+    unit: '分', 
+    target: 4.6, 
+    max: 5,
+    type: 'higher_better',
+    desc: '個案在問卷或回饋中對你的整體滿意程度',
+    isScore: true // Mark as score 0-5
+  },
+  { 
+    id: 'complaints', 
+    label: '客訴件數', 
+    unit: '件', 
+    target: 0, 
+    warning: 1,
+    type: 'lower_better',
+    desc: '與你相關、需要主管介入處理的正式客訴件數'
+  },
+];
+
+const INITIAL_DATA = {
+  therapistName: '',
+  branch: '',
+  month: '',
+  occupancy: '',
+  newCases: '',
+  regularClients: '',
+  totalHours: '',
+  conversionRate: '',
+  returnRate: '',
+  satisfaction: '',
+  complaints: '',
+  growthFocus: '',
+  teamContribution: '',
+};
+
+// --- Helper Functions ---
+const getStatusLevel = (value, config) => {
+  if (value === '' || value === undefined) return 'empty';
+  const val = parseFloat(value) || 0;
+
+  if (config.type === 'lower_better') {
+    if (val <= config.target) return 'success';
+    if (val <= config.warning) return 'warning';
+    return 'error';
+  } else {
+    // Higher is better
+    if (val >= config.target) return 'success';
+    if (val >= config.target * 0.8) return 'warning';
+    return 'error';
+  }
+};
+
+const getStatus = (value, config) => {
+  const level = getStatusLevel(value, config);
+  
+  if (level === 'empty') return { label: '未填', color: 'bg-slate-100 text-slate-400 border-slate-200' };
+  if (level === 'success') return { label: '達標', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  if (level === 'warning') return { label: '注意', color: 'bg-amber-50 text-amber-700 border-amber-200' };
+  return { label: '需改善', color: 'bg-rose-50 text-rose-700 border-rose-200' };
+};
+
+const getInputBorderClass = (value, config) => {
+  const level = getStatusLevel(value, config);
+  // Using higher contrast and clear indicators
+  if (level === 'error') return 'border-rose-400 ring-1 ring-rose-400 bg-rose-50 text-rose-700';
+  if (level === 'empty') return 'border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-slate-50 text-slate-700';
+  return 'border-emerald-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-slate-50 text-slate-700'; 
+};
+
+// Normalize value to 0-100 scale for Radar Chart
+const normalizeForChart = (value, config) => {
+  const val = parseFloat(value) || 0;
+  if (config.id === 'satisfaction') {
+    // 0-5 scale mapped to 0-100
+    return Math.min((val / 5) * 100, 100);
+  }
+  if (config.id === 'complaints') {
+    return val === 0 ? 100 : Math.max(0, 100 - (val * 50));
+  }
+  let percentage = (val / config.target) * 100;
+  return Math.min(percentage, 100); 
+};
+
+// Find therapist object by name
+const getTherapistInfo = (name) => {
+  if (!name) return { 
+    name: '請選擇', 
+    title: '治療師', 
+    type: 'OT/PT', 
+    avatar: '' 
+  };
+  return THERAPISTS.find(t => t.name === name) || { 
+    name: name, 
+    title: '職能治療師', 
+    type: 'OT', 
+    avatar: `https://ui-avatars.com/api/?name=${name}&background=cbd5e1&color=fff&size=128` 
+  };
+};
+
+// --- Components ---
+
+const StatusBadge = ({ status }) => (
+  <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${status.color} transition-colors duration-200 flex items-center justify-center min-w-[60px]`}>
+    {status.label}
+  </span>
+);
+
+const ImageWithSkeleton = ({ src, alt, className, style }) => {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+     setLoaded(false);
+     setError(false);
+  }, [src]);
+
+  return (
+    <div className={`relative overflow-hidden ${className}`} style={style}>
+      {/* Loading Skeleton */}
+      {!loaded && !error && (
+        <div className="absolute inset-0 bg-slate-200 animate-pulse flex items-center justify-center">
+          <Loader2 className="text-slate-400 w-6 h-6 animate-spin opacity-50" />
+        </div>
+      )}
+      
+      {/* Actual Image */}
+      {!error && src && (
+        <img
+          src={src}
+          alt={alt}
+          // Note: crossOrigin="anonymous" is omitted intentionally to prevent broken images
+          // if the server (adlers.tw) does not support CORS headers.
+          // html2canvas will attempt to fetch it via proxy/CORS mode if configured.
+          className={`w-full h-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={() => setLoaded(true)}
+          onError={() => setError(true)}
+        />
+      )}
+
+      {/* Fallback for No Image or Error */}
+      {(error || !src) && (
+        <div className="absolute inset-0 bg-slate-100 flex items-center justify-center text-slate-300 flex-col gap-1">
+          <User className="w-8 h-8" />
+          <span className="text-[10px]">無照片</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const HistoryItem = ({ item, onRequestDelete, onLoad, isSelected }) => (
+  <div 
+    className={`group flex items-center justify-between p-5 mb-3 rounded-xl border transition-all cursor-pointer relative overflow-hidden
+      ${isSelected 
+        ? 'border-indigo-500 bg-indigo-50/50 shadow-md' 
+        : 'border-slate-100 bg-white hover:border-indigo-200 hover:shadow-lg hover:-translate-y-0.5'}`}
+    onClick={onLoad}
+  >
+    {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500"></div>}
+    
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <span className="font-bold text-slate-800 text-lg tracking-tight">{item.month}</span>
+        <span className="text-slate-300">|</span>
+        <span className="text-slate-600 font-medium">{item.branch}</span>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-slate-400">
+        <Clock size={12} />
+        <span>{item.createdAt?.seconds ? new Date(item.createdAt.seconds * 1000).toLocaleDateString() : '剛剛'} 保存</span>
+      </div>
+    </div>
+    
+    <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-lg border border-slate-100">
+        <User size={14} className="text-slate-400" />
+        <span className="text-sm text-slate-600 font-medium">{item.therapistName}</span>
+      </div>
+      <button 
+        onClick={(e) => { e.stopPropagation(); onRequestDelete(item); }}
+        className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-all"
+        title="刪除紀錄"
+      >
+        <Trash2 size={18} />
+      </button>
+    </div>
+  </div>
+);
+
+// Custom Modal for Deletion Confirmation
+const DeleteConfirmModal = ({ isOpen, onClose, onConfirm, item }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200" style={{ zIndex: 100 }}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 scale-100 animate-in zoom-in-95 duration-200 border border-slate-100">
+        <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center mb-4 text-rose-600">
+          <Trash2 size={24} />
+        </div>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">確認刪除紀錄？</h3>
+        <p className="text-slate-500 text-sm mb-6 leading-relaxed">
+          您即將刪除 <span className="font-semibold text-slate-700">{item?.month} {item?.branch}</span> 的評估資料。此動作無法復原，請確認是否繼續。
+        </p>
+        <div className="flex gap-3 justify-end">
+          <button 
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-slate-600 font-medium hover:bg-slate-50 transition-colors"
+          >
+            取消
+          </button>
+          <button 
+            onClick={onConfirm}
+            className="px-4 py-2 rounded-lg bg-rose-600 text-white font-medium hover:bg-rose-700 shadow-md shadow-rose-200 transition-colors"
+          >
+            確認刪除
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [formData, setFormData] = useState(INITIAL_DATA);
+  const [history, setHistory] = useState([]);
+  const [view, setView] = useState('form'); // 'form' or 'history'
+  const [loading, setLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState('idle'); // idle, saving, success, error
+  const [copyStatus, setCopyStatus] = useState('idle'); // idle, copied
+  const [downloading, setDownloading] = useState(false);
+  
+  // Delete Modal State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
+
+  // Refs for capturing
+  const reportRef = useRef(null);
+
+  // Computed info for current selection
+  const currentTherapist = useMemo(() => getTherapistInfo(formData.therapistName), [formData.therapistName]);
+
+  // --- Auth & Data Sync ---
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        const q = query(
+          collection(db, 'artifacts', appId, 'users', currentUser.uid, 'kpi_records'),
+          orderBy('createdAt', 'desc')
+        );
+        const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+          const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setHistory(records);
+          setLoading(false);
+        }, (error) => {
+          console.error("Error fetching history:", error);
+          setLoading(false);
+        });
+        return () => unsubscribeSnapshot();
+      } else {
+        setLoading(false);
+      }
+    });
+    return () => unsubscribeAuth();
+  }, []);
+
+  // --- Auto-Load Draft from LocalStorage ---
+  useEffect(() => {
+    const savedDraft = localStorage.getItem('kpi_form_draft');
+    if (savedDraft) {
+      try {
+        const parsedDraft = JSON.parse(savedDraft);
+        setFormData(prev => ({ ...prev, ...parsedDraft }));
+      } catch (e) {
+        console.error("Failed to load draft", e);
+      }
+    }
+  }, []);
+
+  // --- Auto-Save Draft to LocalStorage ---
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      localStorage.setItem('kpi_form_draft', JSON.stringify(formData));
+    }, 500); // Debounce save to avoid thrashing
+    return () => clearTimeout(timeoutId);
+  }, [formData]);
+
+  // --- Load html2canvas dynamically ---
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    script.async = true;
+    document.body.appendChild(script);
+    return () => {
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
+    }
+  }, []);
+
+  // --- Handlers ---
+
+  const handleInputChange = (field, value) => {
+    // Input Validation Logic
+    const config = KPI_CONFIG.find(c => c.id === field);
+    let newValue = value;
+
+    if (config) {
+        if (value === '') {
+            newValue = '';
+        } else {
+            let numVal = parseFloat(value);
+            
+            // Percentage Validation (0-100)
+            if (config.isPercentage) {
+                if (numVal < 0) numVal = 0;
+                if (numVal > 100) numVal = 100;
+                newValue = numVal;
+            }
+            
+            // Score Validation (0-5) for Satisfaction
+            if (config.isScore) {
+                if (numVal < 0) numVal = 0;
+                if (numVal > 5) numVal = 5;
+                newValue = numVal; // Allow decimals
+            }
+        }
+    }
+
+    setFormData(prev => ({ ...prev, [field]: newValue }));
+  };
+
+  const handleSave = async () => {
+    if (!user) return;
+    setSaveStatus('saving');
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'kpi_records'), {
+        ...formData,
+        createdAt: serverTimestamp()
+      });
+      setSaveStatus('success');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (e) {
+      console.error(e);
+      setSaveStatus('error');
+    }
+  };
+
+  const handleRequestDelete = (item) => {
+    setItemToDelete(item);
+    setDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!user || !itemToDelete) return;
+    
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'kpi_records', itemToDelete.id));
+      setDeleteModalOpen(false);
+      setItemToDelete(null);
+    } catch (e) {
+      console.error("Delete failed", e);
+      alert("刪除失敗，請稍後再試");
+    }
+  };
+
+  const loadRecord = (record) => {
+    const { id, createdAt, ...data } = record;
+    setFormData({ ...data }); 
+    setView('form');
+  };
+
+  const resetForm = () => {
+    setFormData(INITIAL_DATA);
+    localStorage.removeItem('kpi_form_draft'); // Clear draft on reset
+  };
+
+  const copySummary = () => {
+    const text = generateSummaryText();
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    textArea.style.top = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        setCopyStatus('copied');
+        setTimeout(() => setCopyStatus('idle'), 2000);
+      } else {
+        alert('複製失敗，請手動複製。');
+      }
+    } catch (err) {
+      alert('複製失敗，請手動複製。');
+    }
+    document.body.removeChild(textArea);
+  };
+
+  const downloadImage = async () => {
+    if (!window.html2canvas || !reportRef.current) {
+      alert("下載元件尚未載入完成，請稍後再試。");
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      // scrollY fix for correct positioning on mobile/scrolled page
+      const canvas = await window.html2canvas(reportRef.current, {
+        scale: 2, // High resolution
+        useCORS: true, // Try to fetch images with CORS
+        allowTaint: true,
+        logging: false,
+        backgroundColor: '#f8fafc', // match bg-slate-50
+        scrollY: -window.scrollY, 
+        windowWidth: reportRef.current.scrollWidth,
+      });
+
+      const image = canvas.toDataURL("image/png");
+      const link = document.createElement("a");
+      const filename = `${formData.month || '未命名'}_${formData.therapistName || '治療師'}_KPI自評表.png`;
+      link.href = image;
+      link.download = filename;
+      link.click();
+    } catch (error) {
+      console.error("Download failed:", error);
+      alert("圖片生成失敗，請稍後再試。");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  // --- Derived Data for Visualization ---
+
+  const radarData = useMemo(() => {
+    return KPI_CONFIG.map(config => ({
+      subject: config.label,
+      A: normalizeForChart(formData[config.id], config),
+      fullMark: 100,
+    }));
+  }, [formData]);
+
+  const generateSummaryText = () => {
+    const nameStr = formData.therapistName || '（未選擇姓名）';
+    const monthStr = formData.month || '（未選擇月份）';
+    const branchStr = formData.branch || '（未選擇分所）';
+    
+    return `${monthStr}｜${branchStr}｜${nameStr} ${currentTherapist.title} 的每月 KPI 自評\n\n` +
+      `📊 量能與品質指標：\n` +
+      KPI_CONFIG.map(config => {
+        const val = formData[config.id] !== '' ? formData[config.id] : '未填';
+        return `- ${config.label}：${val} ${config.unit}`;
+      }).join('\n') + 
+      `\n\n🧠 本月技術成長重點：\n${formData.growthFocus || '（未填寫）'}\n\n` +
+      `🤝 本月對團隊的貢獻與協作：\n${formData.teamContribution || '（未填寫）'}`;
+  };
+
+  // --- Render ---
+
+  if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-400 font-medium"><Loader2 className="animate-spin mr-2" /> 系統載入中...</div>;
+
+  return (
+    <div className="min-h-screen bg-slate-50/50 font-sans text-slate-800 pb-20 relative selection:bg-indigo-100 selection:text-indigo-700">
+      
+      <DeleteConfirmModal 
+        isOpen={deleteModalOpen} 
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={confirmDelete}
+        item={itemToDelete}
+      />
+
+      {/* Modern Header */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/60 sticky top-0 z-20">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3 overflow-hidden">
+            {/* Logo Image */}
+            <img 
+              src="https://adlers.tw/wp-content/uploads/2021/01/%E6%9C%AA%E5%91%BD%E5%90%8D-3_%E5%B7%A5%E4%BD%9C%E5%8D%80%E5%9F%9F-1-1.png" 
+              alt="愛迪樂 Logo" 
+              className="h-10 w-auto object-contain shrink-0"
+            />
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold text-slate-800 tracking-tight leading-none truncate">愛迪樂治療師個人每月KPI自評表</h1>
+              <div className="text-[10px] font-medium text-slate-500 mt-1 tracking-wide leading-tight truncate sm:whitespace-normal sm:overflow-visible">
+                <span className="hidden sm:inline">每位治療師每月填寫一次：系統會幫你算出每個 KPI 狀態，並用雷達圖＋文字摘要顯示本月整體表現。</span>
+                <span className="block sm:inline sm:ml-2 mt-0.5 sm:mt-0 text-slate-600">
+                  🟢 = 達標　🟡 = 接近／需注意　🔴 = 需要討論與支援
+                </span>
+                <span className="sm:hidden">系統自動算出 KPI 狀態 🟢達標 🟡注意 🔴需支援</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex bg-slate-100/80 p-1 rounded-xl shrink-0 ml-2">
+             <button 
+              onClick={() => setView('form')}
+              className={`px-3 sm:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all duration-200 whitespace-nowrap ${
+                view === 'form' 
+                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-900/5' 
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              編輯<span className="hidden sm:inline">評估</span>
+            </button>
+            <button 
+              onClick={() => setView('history')}
+              className={`px-3 sm:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all duration-200 whitespace-nowrap ${
+                view === 'history' 
+                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-900/5' 
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              歷史<span className="hidden sm:inline">紀錄</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto px-4 py-8" ref={view === 'form' ? reportRef : null}>
+        
+        {view === 'history' ? (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex justify-between items-end mb-8">
+              <div>
+                 <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-2">
+                  歷史存檔
+                </h2>
+                <p className="text-slate-500 text-sm">查看過往的自評紀錄與數據軌跡</p>
+              </div>
+             
+              <button 
+                onClick={() => { resetForm(); setView('form'); }}
+                className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 font-medium active:scale-95"
+              >
+                <Plus size={18} strokeWidth={2.5} />
+                建立新評估
+              </button>
+            </div>
+            
+            {history.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 bg-white rounded-3xl border border-dashed border-slate-200">
+                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-300">
+                  <History size={32} />
+                </div>
+                <p className="text-slate-400 font-medium">尚無存檔紀錄</p>
+                <p className="text-slate-400 text-sm mt-1">完成一份評估後點擊「保存」即可在此查看</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {history.map(record => (
+                  <HistoryItem 
+                    key={record.id} 
+                    item={record} 
+                    onRequestDelete={handleRequestDelete} 
+                    onLoad={() => loadRecord(record)} 
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
+            
+            {/* Left Column: Form */}
+            <div className="lg:col-span-7 space-y-6">
+              
+              {/* Section 1: Basic Info with Profile Photo */}
+              <section className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_12px_-4px_rgba(0,0,0,0.05)] border border-slate-100 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-bl-full -z-0"></div>
+                
+                <div className="flex items-start gap-6">
+                  {/* Photo Column - With Skeleton Loader */}
+                  <div className="flex flex-col items-center gap-3 shrink-0">
+                    <div className="w-32 rounded-2xl bg-slate-100 p-1 border-2 border-slate-200 shadow-sm overflow-hidden relative group">
+                      <ImageWithSkeleton 
+                        src={currentTherapist.avatar}
+                        alt={currentTherapist.name}
+                        className="w-full h-auto rounded-xl bg-slate-200 aspect-[3/4]"
+                      />
+                      {/* Hint for updating photo */}
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-200 rounded-xl pointer-events-none">
+                         <span className="text-white text-[10px] font-bold px-2 text-center">修改程式碼<br/>更換照片</span>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {currentTherapist.type}
+                    </span>
+                  </div>
+
+                  {/* Inputs Column */}
+                  <div className="flex-1 space-y-5 relative z-10">
+                    <div className="flex items-center gap-3 mb-2 pb-2 border-b border-slate-50">
+                      <h2 className="text-lg font-bold text-slate-800">基本資料</h2>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div className="space-y-1.5 md:col-span-2">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">治療師姓名</label>
+                        <div className="relative">
+                          <select 
+                            value={formData.therapistName}
+                            onChange={(e) => handleInputChange('therapistName', e.target.value)}
+                            className={`w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-bold appearance-none text-base ${formData.therapistName === '' ? 'text-slate-400' : 'text-slate-700'}`}
+                          >
+                            <option value="" disabled hidden>輸入姓名</option>
+                            <optgroup label="物理治療師 (PT)">
+                              {THERAPISTS.filter(t => t.type === 'PT').map(t => (
+                                <option key={t.name} value={t.name}>{t.name}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="職能治療師 (OT)">
+                              {THERAPISTS.filter(t => t.type === 'OT').map(t => (
+                                <option key={t.name} value={t.name}>{t.name}</option>
+                              ))}
+                            </optgroup>
+                          </select>
+                          <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" size={16} />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">所屬分所</label>
+                        <div className="relative">
+                          <select 
+                            value={formData.branch}
+                            onChange={(e) => handleInputChange('branch', e.target.value)}
+                            className={`w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-medium appearance-none text-base ${formData.branch === '' ? 'text-slate-400' : 'text-slate-700'}`}
+                          >
+                             <option value="" disabled hidden>點選選擇</option>
+                            {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                          <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 rotate-90 pointer-events-none" size={16} />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">評估月份</label>
+                        <div className="relative">
+                          <select 
+                            value={formData.month}
+                            onChange={(e) => handleInputChange('month', e.target.value)}
+                            className={`w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all font-medium appearance-none text-base ${formData.month === '' ? 'text-slate-400' : 'text-slate-700'}`}
+                          >
+                             <option value="" disabled hidden>點選選擇</option>
+                            {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                          <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Section 2: KPI Form */}
+              <section className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_12px_-4px_rgba(0,0,0,0.05)] border border-slate-100">
+                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-50">
+                   <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+                      <ClipboardList size={18} />
+                   </div>
+                   <h2 className="text-lg font-bold text-slate-800">量能與品質 KPI</h2>
+                </div>
+
+                <div className="space-y-2">
+                  {KPI_CONFIG.map((config, index) => {
+                    const status = getStatus(formData[config.id], config);
+                    const inputClass = getInputBorderClass(formData[config.id], config);
+
+                    return (
+                      <div key={config.id} className="group p-4 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline gap-2 mb-1">
+                              <label className="text-sm font-bold text-slate-700 truncate">
+                                {config.label}
+                              </label>
+                              <span className="text-xs font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                {config.unit}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-400 truncate">{config.desc}</p>
+                          </div>
+                          
+                          <div className="flex items-center gap-4">
+                            <div className="text-right hidden sm:block">
+                              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">目標</p>
+                              <p className="text-xs font-medium text-slate-600 font-mono">
+                                {config.type === 'lower_better' ? '≤' : '≥'} {config.target}
+                              </p>
+                            </div>
+                            
+                            <div className={`flex items-center gap-3 p-1 rounded-lg border transition-colors shadow-sm ${inputClass}`}>
+                              <input 
+                                type="number"
+                                inputMode="decimal"
+                                value={formData[config.id]}
+                                onChange={(e) => handleInputChange(config.id, e.target.value)}
+                                className="w-28 px-2 py-1 text-right font-mono text-lg font-bold bg-transparent outline-none placeholder-slate-400 placeholder:text-sm placeholder:font-normal text-inherit appearance-none"
+                                placeholder={config.isScore ? "預設(0-5)" : "預設數值"}
+                              />
+                            </div>
+                            <div className="w-[68px] flex justify-end">
+                              <StatusBadge status={status} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* Section 3: Qualitative */}
+              <section className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_2px_12px_-4px_rgba(0,0,0,0.05)] border border-slate-100">
+                <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-50">
+                   <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+                      <TrendingUp size={18} />
+                   </div>
+                   <h2 className="text-lg font-bold text-slate-800">成長與貢獻</h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
+                      本月技術成長重點
+                    </label>
+                    <textarea 
+                      rows={6}
+                      value={formData.growthFocus}
+                      onChange={(e) => handleInputChange('growthFocus', e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none resize-none transition-all text-base leading-relaxed"
+                      placeholder="請條列式紀錄本月學習的新技術或課程..."
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>
+                      本月團隊貢獻與協作
+                    </label>
+                    <textarea 
+                      rows={6}
+                      value={formData.teamContribution}
+                      onChange={(e) => handleInputChange('teamContribution', e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none resize-none transition-all text-base leading-relaxed"
+                      placeholder="請條列式紀錄專案開發或團隊協助事項..."
+                    />
+                  </div>
+                </div>
+              </section>
+
+            </div>
+
+            {/* Right Column: Visualization & Summary */}
+            <div className="lg:col-span-5 space-y-6">
+              
+              <div className="sticky top-24 space-y-6">
+                
+                {/* Actions Card */}
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <button 
+                      onClick={resetForm}
+                      className="flex-1 sm:flex-none text-slate-400 hover:text-slate-600 text-xs font-semibold px-4 py-2 transition-colors uppercase tracking-wide border border-transparent hover:border-slate-100 rounded-lg"
+                    >
+                      重置表單
+                    </button>
+                    <button 
+                      onClick={downloadImage}
+                      disabled={downloading}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold transition-colors disabled:opacity-50"
+                      title="下載整頁圖片"
+                    >
+                       {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                       <span className="text-sm">下載圖片</span>
+                    </button>
+                  </div>
+                  
+                  <button 
+                    onClick={handleSave}
+                    disabled={saveStatus === 'saving' || saveStatus === 'success'}
+                    className={`w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 
+                      ${saveStatus === 'success' 
+                        ? 'bg-emerald-500 shadow-emerald-200' 
+                        : 'bg-slate-900 hover:bg-slate-800 shadow-slate-300'}`}
+                  >
+                    {saveStatus === 'saving' ? (
+                      <span className="flex items-center gap-2 text-sm"><span className="animate-spin">⌛</span> 保存中</span>
+                    ) : saveStatus === 'success' ? (
+                      <span className="flex items-center gap-2 text-sm"><Check size={16} /> 已保存</span>
+                    ) : (
+                      <>
+                        <Save size={18} />
+                        <span className="text-sm">保存紀錄</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Radar Chart Card */}
+                <section className="bg-white p-6 rounded-3xl shadow-[0_4px_20px_-8px_rgba(0,0,0,0.08)] border border-slate-100 overflow-hidden relative">
+                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-violet-500"></div>
+                  <div className="flex justify-between items-start mb-2">
+                     <h2 className="text-lg font-bold text-slate-800">能力分佈雷達圖</h2>
+                     <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded">0-100 SCALE</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mb-6">各項指標達成率視覺化分析</p>
+                  
+                  <div className="h-[280px] w-full flex items-center justify-center -ml-2 relative z-10">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarData}>
+                        <PolarGrid stroke="#e2e8f0" strokeDasharray="4 4" />
+                        <PolarAngleAxis 
+                          dataKey="subject" 
+                          tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }} 
+                        />
+                        <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                        <Radar
+                          name="KPI Achievement"
+                          dataKey="A"
+                          stroke="#6366f1"
+                          strokeWidth={2.5}
+                          fill="#6366f1"
+                          fillOpacity={0.2}
+                        />
+                        <Tooltip 
+                          formatter={(value) => [`${Math.round(value)}%`, '達成率']}
+                          contentStyle={{ 
+                            borderRadius: '12px', 
+                            border: 'none', 
+                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                            fontFamily: 'monospace',
+                            fontSize: '12px'
+                          }}
+                          itemStyle={{ color: '#4f46e5', fontWeight: 'bold' }}
+                        />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  
+                  {/* Background decoration */}
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-indigo-50/50 rounded-full blur-3xl -z-0"></div>
+                </section>
+
+                {/* Text Summary Card - Redesigned to be clean and professional (White/Paper style) */}
+                <section className="bg-white rounded-3xl shadow-[0_4px_20px_-8px_rgba(0,0,0,0.08)] border border-slate-200 overflow-hidden flex flex-col relative group">
+                  
+                  {/* Header Bar */}
+                  <div className="bg-slate-50/80 backdrop-blur-sm border-b border-slate-100 p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-slate-600">
+                        <FileText size={16} />
+                      </div>
+                      <h2 className="text-sm font-bold text-slate-700">本月評估摘要</h2>
+                    </div>
+                    
+                    <button 
+                      onClick={copySummary}
+                      disabled={copyStatus === 'copied'}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all transform active:scale-95 border
+                        ${copyStatus === 'copied' 
+                          ? 'bg-emerald-50 text-emerald-600 border-emerald-200' 
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'}`}
+                    >
+                      {copyStatus === 'copied' ? (
+                        <>
+                          <Check size={14} />
+                          已複製
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={14} />
+                          複製內容
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  
+                  {/* Content Area - Paper Style */}
+                  <div className="p-6 bg-white relative min-h-[300px]">
+                    {/* Paper Texture/Lines Effect (Optional CSS trick) */}
+                    <div className="absolute top-0 left-0 w-full h-full opacity-[0.03] pointer-events-none" 
+                         style={{ backgroundImage: 'linear-gradient(#000 1px, transparent 1px)', backgroundSize: '100% 24px' }}>
+                    </div>
+
+                    <div className="font-mono text-sm text-slate-600 leading-relaxed whitespace-pre-wrap relative z-10">
+                      {generateSummaryText()}
+                    </div>
+                  </div>
+
+                  {/* Footer Decoration */}
+                  <div className="bg-slate-50 p-3 border-t border-slate-100 text-[10px] text-center text-slate-400 font-medium tracking-wider">
+                    CONFIDENTIAL SELF-EVALUATION REPORT
+                  </div>
+                </section>
+
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
