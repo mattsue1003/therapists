@@ -30,9 +30,9 @@
         /* 避免 iOS 輸入框縮放 */
         input, select, textarea { font-size: 16px !important; } 
         
-        /* 手機版標題自動縮放技巧：使用 container queries 概念的替代方案 */
+        /* 手機版標題自動縮放技巧 */
         .responsive-title {
-            font-size: clamp(1rem, 4vw, 1.25rem); /* 最小 16px, 最大 20px, 中間隨寬度變化 */
+            font-size: clamp(1rem, 4vw, 1.25rem);
             white-space: nowrap;
             overflow: visible;
         }
@@ -48,7 +48,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- 內建圖示元件 (已修復 JSX 多路徑包覆問題) ---
+        // --- 內建圖示元件 ---
         const Icon = ({ name, className }) => {
             const icons = {
                 plus: <path d="M5 12h14M12 5v14" />,
@@ -56,7 +56,6 @@
                 save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8" />,
                 download: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />,
                 check: <path d="M20 6 9 17l-5-5" />,
-                // 修正：多路徑圖示必須包在 <React.Fragment> 或 <> 中
                 copy: <><rect width="13" height="13" x="9" y="9" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
                 user: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
                 clock: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
@@ -110,6 +109,23 @@
         const INITIAL_DATA = { therapistName: '', branch: '', month: '', occupancy: '', newCases: '', regularClients: '', totalHours: '', conversionRate: '', returnRate: '', satisfaction: '', complaints: '', growthFocus: '', teamContribution: '' };
 
         // --- Helper Functions ---
+        // ★ 新增：將網路圖片轉換為 Base64，解決截圖時的跨域問題 ★
+        const getBase64FromUrl = async (url) => {
+            try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            } catch (error) {
+                console.error("Error converting image to base64:", error);
+                return url; // 發生錯誤時回傳原網址，盡力而為
+            }
+        };
+
         const getStatusLevel = (value, config) => {
             if (value === '' || value === undefined) return 'empty';
             const val = parseFloat(value) || 0;
@@ -147,14 +163,28 @@
         // --- Sub Components ---
         const StatusBadge = ({ status }) => <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${status.color} transition-colors min-w-[60px] text-center`}>{status.label}</span>;
 
+        // ★ 修改：使用 Base64 顯示圖片 ★
         const ImageWithSkeleton = ({ src, alt, className }) => {
             const [loaded, setLoaded] = useState(false);
             const [error, setError] = useState(false);
-            useEffect(() => { setLoaded(false); setError(false); }, [src]);
+            const [base64Src, setBase64Src] = useState(null);
+
+            useEffect(() => {
+                setLoaded(false);
+                setError(false);
+                setBase64Src(null);
+                if (src) {
+                    getBase64FromUrl(src).then(base64 => {
+                        setBase64Src(base64);
+                        setLoaded(true); // 設置為 true，因為我們已經拿到了 base64
+                    });
+                }
+            }, [src]);
+
             return (
                 <div className={`relative overflow-hidden ${className}`}>
                     {!loaded && !error && <div className="absolute inset-0 bg-slate-200 animate-pulse flex items-center justify-center"><Icon name="loader" className="animate-spin text-slate-400 w-6 h-6" /></div>}
-                    {!error && src && <img src={src} alt={alt} className={`w-full h-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setLoaded(true)} onError={() => setError(true)} />}
+                    {!error && base64Src && <img src={base64Src} alt={alt} className={`w-full h-full object-cover transition-opacity duration-500 opacity-100`} onError={() => setError(true)} />}
                     {(error || !src) && <div className="absolute inset-0 bg-slate-100 flex items-center justify-center text-slate-300 flex-col gap-1"><Icon name="user" className="w-8 h-8" /><span className="text-[10px]">無照片</span></div>}
                 </div>
             );
@@ -266,7 +296,7 @@
                         useCORS: true,
                         allowTaint: true,
                         backgroundColor: '#f8fafc',
-                        windowWidth: 1280, // 強制模擬電腦寬度，確保雙欄
+                        // windowWidth: 1280, // 移除此行，避免與 onclone 衝突
                         onclone: (clonedDoc) => {
                             const mainElement = clonedDoc.getElementById('report-main');
                             if (mainElement) {
@@ -274,6 +304,11 @@
                                 mainElement.style.width = '1024px';
                                 mainElement.style.margin = '0 auto';
                                 mainElement.style.padding = '40px';
+
+                                // ★ 新增：強制所有元素顯示溢出內容，防止文字被切斷 ★
+                                const style = clonedDoc.createElement('style');
+                                style.innerHTML = '* { overflow: visible !important; }';
+                                clonedDoc.head.appendChild(style);
                                 
                                 // 修正下載按鈕的隱藏方式
                                 const actionButtons = clonedDoc.getElementById('action-buttons-container');
