@@ -8,30 +8,25 @@
     <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 2. React & ReactDOM (核心) -->
+    <!-- 2. React 核心 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     
-    <!-- 3. Recharts 依賴 (Prop-types) -->
+    <!-- 3. Recharts 依賴 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
-    
-    <!-- 4. Recharts (鎖定穩定版本) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
     
-    <!-- 5. Babel (JSX 解析) -->
+    <!-- 4. Babel (JSX 編譯) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     
-    <!-- 6. Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <!-- 7. html2canvas (圖片下載) -->
+    <!-- 5. html2canvas (截圖工具) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; -webkit-font-smoothing: antialiased; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        /* 避免 iOS Safari 輸入框縮放 */
+        input, select, textarea { font-size: 16px !important; } 
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -39,27 +34,48 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
-        const { 
-            LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-            Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis 
-        } = window.Recharts;
-        
-        const { 
-            Save, History, FileText, Activity, Users, Clock, 
-            TrendingUp, MessageCircle, AlertCircle, Copy, Trash2, Plus, ChevronRight, X, Check,
-            ClipboardList, User, Calendar, Award, Download, Loader2, Image: ImageIcon 
-        } = lucide;
 
-        // --- Constants & KPI Definitions ---
+        // --- 內建圖示元件 (已修正 JSX 語法錯誤) ---
+        const Icon = ({ name, className }) => {
+            const icons = {
+                plus: <path d="M5 12h14M12 5v14" />,
+                trash: <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6" />,
+                save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8" />,
+                download: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />,
+                check: <path d="M20 6 9 17l-5-5" />,
+                // 修正：多個路徑必須包在 Fragment <>...</> 中
+                copy: <><rect width="13" height="13" x="9" y="9" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
+                user: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
+                clock: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
+                calendar: <><rect width="18" height="18" x="3" y="4" rx="2" ry="2" /><line x1="16" x2="16" y1="2" y2="6" /><line x1="8" x2="8" y1="2" y2="6" /><line x1="3" x2="21" y1="10" y2="10" /></>,
+                chevronDown: <path d="m6 9 6 6 6-6" />,
+                clipboard: <><rect width="8" height="4" x="8" y="2" rx="1" ry="1" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /></>,
+                trending: <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></>,
+                loader: <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            };
+            return (
+                <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    width="24" height="24" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    className={className}
+                >
+                    {icons[name]}
+                </svg>
+            );
+        };
+
+        // --- Constants ---
         const BRANCHES = ["松江所", "中山所"];
         const MONTHS = Array.from({ length: 12 }, (_, i) => `${i + 1} 月`);
-
         const THERAPISTS = [
-            // OT 職能治療師
             { name: '鍾孟修', title: '職能治療師', type: 'OT', avatar: 'https://adlers.tw/wp-content/uploads/2021/03/08161275%E6%8B%B7%E8%B2%9D.jpg' },
             { name: '鄭凱文', title: '職能治療師', type: 'OT', avatar: 'https://adlers.tw/wp-content/uploads/2021/05/08162446%E6%8B%B7%E8%B2%9D.jpg' },
-            
-            // PT 物理治療師
             { name: '陳胤甫', title: '物理治療師', type: 'PT', avatar: 'https://adlers.tw/wp-content/uploads/2021/05/08162364%E6%8B%B7%E8%B2%9D.jpg' },
             { name: '謝迪亞', title: '物理治療師', type: 'PT', avatar: 'https://adlers.tw/wp-content/uploads/2021/05/08163287%E6%8B%B7%E8%B2%9D.jpg' },
             { name: '巫佳倫', title: '物理治療師', type: 'PT', avatar: 'https://adlers.tw/wp-content/uploads/2021/03/08162832%E6%8B%B7%E8%B2%9D.jpg' },
@@ -68,7 +84,6 @@
             { name: '葉羽庭', title: '物理治療師', type: 'PT', avatar: 'https://adlers.tw/wp-content/uploads/2024/04/%E8%91%89%E7%BE%BD%E5%BA%AD.jpg' },
             { name: '陳竫沂', title: '物理治療師', type: 'PT', avatar: 'https://adlers.tw/wp-content/uploads/2024/08/%E9%99%B3%E7%AB%AB%E6%B2%82%E7%89%A9%E7%90%86%E6%B2%BB%E7%99%82%E5%B8%AB3.jpg.png' },
         ];
-
         const KPI_CONFIG = [
             { id: 'occupancy', label: '滿班率', unit: '%', target: 80, type: 'higher_better', desc: '當月實際看診時段 ÷ 可排時段', isPercentage: true },
             { id: 'newCases', label: '新增個案數', unit: '人', target: 15, type: 'higher_better', desc: '本月第一次來找你的新個案' },
@@ -79,13 +94,7 @@
             { id: 'satisfaction', label: '平均滿意度', unit: '分', target: 4.6, max: 5, type: 'higher_better', desc: '個案在問卷或回饋中對你的整體滿意程度', isScore: true },
             { id: 'complaints', label: '客訴件數', unit: '件', target: 0, warning: 1, type: 'lower_better', desc: '與你相關、需要主管介入處理的正式客訴件數' },
         ];
-
-        const INITIAL_DATA = {
-            therapistName: '', branch: '', month: '',
-            occupancy: '', newCases: '', regularClients: '', totalHours: '',
-            conversionRate: '', returnRate: '', satisfaction: '', complaints: '',
-            growthFocus: '', teamContribution: '',
-        };
+        const INITIAL_DATA = { therapistName: '', branch: '', month: '', occupancy: '', newCases: '', regularClients: '', totalHours: '', conversionRate: '', returnRate: '', satisfaction: '', complaints: '', growthFocus: '', teamContribution: '' };
 
         // --- Helper Functions ---
         const getStatusLevel = (value, config) => {
@@ -95,13 +104,11 @@
                 if (val <= config.target) return 'success';
                 if (val <= config.warning) return 'warning';
                 return 'error';
-            } else {
-                if (val >= config.target) return 'success';
-                if (val >= config.target * 0.8) return 'warning';
-                return 'error';
             }
+            if (val >= config.target) return 'success';
+            if (val >= config.target * 0.8) return 'warning';
+            return 'error';
         };
-
         const getStatus = (value, config) => {
             const level = getStatusLevel(value, config);
             if (level === 'empty') return { label: '未填', color: 'bg-slate-100 text-slate-400 border-slate-200' };
@@ -109,105 +116,54 @@
             if (level === 'warning') return { label: '注意', color: 'bg-amber-50 text-amber-700 border-amber-200' };
             return { label: '需改善', color: 'bg-rose-50 text-rose-700 border-rose-200' };
         };
-
         const getInputBorderClass = (value, config) => {
             const level = getStatusLevel(value, config);
             if (level === 'error') return 'border-rose-400 ring-1 ring-rose-400 bg-rose-50 text-rose-700';
             if (level === 'empty') return 'border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-slate-50 text-slate-700';
-            return 'border-emerald-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-slate-50 text-slate-700'; 
+            return 'border-emerald-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-slate-50 text-slate-700';
         };
-
         const normalizeForChart = (value, config) => {
             const val = parseFloat(value) || 0;
             if (config.id === 'satisfaction') return Math.min((val / 5) * 100, 100);
             if (config.id === 'complaints') return val === 0 ? 100 : Math.max(0, 100 - (val * 50));
             let percentage = (val / config.target) * 100;
-            return Math.min(percentage, 100); 
+            return Math.min(percentage, 100);
         };
+        const getTherapistInfo = (name) => THERAPISTS.find(t => t.name === name) || { name: name, title: '治療師', type: 'OT/PT', avatar: '' };
 
-        const getTherapistInfo = (name) => {
-            if (!name) return { name: '請選擇', title: '治療師', type: 'OT/PT', avatar: '' };
-            return THERAPISTS.find(t => t.name === name) || { name: name, title: '職能治療師', type: 'OT', avatar: `https://ui-avatars.com/api/?name=${name}&background=cbd5e1&color=fff&size=128` };
-        };
+        // --- Sub Components ---
+        const StatusBadge = ({ status }) => <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${status.color} transition-colors min-w-[60px] text-center`}>{status.label}</span>;
 
-        // --- Components ---
-        const StatusBadge = ({ status }) => (
-            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${status.color} transition-colors duration-200 flex items-center justify-center min-w-[60px]`}>
-                {status.label}
-            </span>
-        );
-
-        const ImageWithSkeleton = ({ src, alt, className, style }) => {
+        const ImageWithSkeleton = ({ src, alt, className }) => {
             const [loaded, setLoaded] = useState(false);
             const [error, setError] = useState(false);
             useEffect(() => { setLoaded(false); setError(false); }, [src]);
-
             return (
-                <div className={`relative overflow-hidden ${className}`} style={style}>
-                    {!loaded && !error && (
-                        <div className="absolute inset-0 bg-slate-200 animate-pulse flex items-center justify-center">
-                            <i data-lucide="loader-2" className="animate-spin text-slate-400 w-6 h-6"></i>
-                        </div>
-                    )}
-                    {!error && src && (
-                        <img src={src} alt={alt} className={`w-full h-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setLoaded(true)} onError={() => setError(true)} />
-                    )}
-                    {(error || !src) && (
-                        <div className="absolute inset-0 bg-slate-100 flex items-center justify-center text-slate-300 flex-col gap-1">
-                            <i data-lucide="user" className="w-8 h-8"></i>
-                            <span className="text-[10px]">無照片</span>
-                        </div>
-                    )}
+                <div className={`relative overflow-hidden ${className}`}>
+                    {!loaded && !error && <div className="absolute inset-0 bg-slate-200 animate-pulse flex items-center justify-center"><Icon name="loader" className="animate-spin text-slate-400 w-6 h-6" /></div>}
+                    {!error && src && <img src={src} alt={alt} className={`w-full h-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`} onLoad={() => setLoaded(true)} onError={() => setError(true)} />}
+                    {(error || !src) && <div className="absolute inset-0 bg-slate-100 flex items-center justify-center text-slate-300 flex-col gap-1"><Icon name="user" className="w-8 h-8" /><span className="text-[10px]">無照片</span></div>}
                 </div>
             );
         };
-
-        const HistoryItem = ({ item, onRequestDelete, onLoad, isSelected }) => (
-            <div className={`group flex items-center justify-between p-5 mb-3 rounded-xl border transition-all cursor-pointer relative overflow-hidden ${isSelected ? 'border-indigo-500 bg-indigo-50/50 shadow-md' : 'border-slate-100 bg-white hover:border-indigo-200 hover:shadow-lg hover:-translate-y-0.5'}`} onClick={onLoad}>
-                {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500"></div>}
-                <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-800 text-lg tracking-tight">{item.month}</span>
-                        <span className="text-slate-300">|</span>
-                        <span className="text-slate-600 font-medium">{item.branch}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
-                        <i data-lucide="clock" className="w-3 h-3"></i>
-                        <span>{new Date(item.createdAt).toLocaleDateString()} 保存</span>
-                    </div>
-                </div>
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-lg border border-slate-100">
-                        <i data-lucide="user" className="w-3 h-3 text-slate-400"></i>
-                        <span className="text-sm text-slate-600 font-medium">{item.therapistName}</span>
-                    </div>
-                    <button onClick={(e) => { e.stopPropagation(); onRequestDelete(item); }} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-all">
-                        <i data-lucide="trash-2" className="w-4 h-4"></i>
-                    </button>
-                </div>
-            </div>
-        );
 
         const DeleteConfirmModal = ({ isOpen, onClose, onConfirm, item }) => {
             if (!isOpen) return null;
             return (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200" style={{ zIndex: 100 }}>
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 scale-100 animate-in zoom-in-95 duration-200 border border-slate-100">
-                        <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center mb-4 text-rose-600">
-                            <i data-lucide="trash-2" className="w-6 h-6"></i>
-                        </div>
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-slate-100">
+                        <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center mb-4 text-rose-600"><Icon name="trash" className="w-6 h-6" /></div>
                         <h3 className="text-lg font-bold text-slate-900 mb-2">確認刪除紀錄？</h3>
-                        <p className="text-slate-500 text-sm mb-6 leading-relaxed">您即將刪除 <span className="font-semibold text-slate-700">{item?.month} {item?.branch}</span> 的評估資料。此動作無法復原。</p>
+                        <p className="text-slate-500 text-sm mb-6">您即將刪除 <span className="font-semibold text-slate-700">{item?.month} {item?.branch}</span> 的評估資料，此動作無法復原。</p>
                         <div className="flex gap-3 justify-end">
-                            <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 font-medium hover:bg-slate-50 transition-colors">取消</button>
-                            <button onClick={onConfirm} className="px-4 py-2 rounded-lg bg-rose-600 text-white font-medium hover:bg-rose-700 shadow-md shadow-rose-200 transition-colors">確認刪除</button>
+                            <button onClick={onClose} className="px-4 py-2 rounded-lg text-slate-600 font-medium hover:bg-slate-50">取消</button>
+                            <button onClick={onConfirm} className="px-4 py-2 rounded-lg bg-rose-600 text-white font-medium hover:bg-rose-700 shadow-md">確認刪除</button>
                         </div>
                     </div>
                 </div>
             );
         };
 
-        // --- Main App Component ---
         const App = () => {
             const [formData, setFormData] = useState(INITIAL_DATA);
             const [history, setHistory] = useState([]);
@@ -221,19 +177,21 @@
             
             const reportRef = useRef(null);
             const currentTherapist = useMemo(() => getTherapistInfo(formData.therapistName), [formData.therapistName]);
+            
+            // 安全獲取 Recharts 元件
+            const RechartsComponents = useMemo(() => {
+                // 如果 window.Recharts 尚未載入，提供一個空殼避免報錯，等載入後再渲染
+                return window.Recharts || { ResponsiveContainer: 'div', RadarChart: 'div', Radar: 'div', PolarGrid: 'div', PolarAngleAxis: 'div', PolarRadiusAxis: 'div', Tooltip: 'div' };
+            }, []);
+            const { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip } = RechartsComponents;
             const radarData = useMemo(() => KPI_CONFIG.map(c => ({ subject: c.label, A: normalizeForChart(formData[c.id], c), fullMark: 100 })), [formData]);
 
             useEffect(() => {
                 const savedDraft = localStorage.getItem('kpi_form_draft');
-                if (savedDraft) {
-                    try { setFormData(prev => ({ ...prev, ...JSON.parse(savedDraft) })); } catch (e) { console.error(e); }
-                }
+                if (savedDraft) try { setFormData(prev => ({ ...prev, ...JSON.parse(savedDraft) })); } catch (e) { }
                 const savedHistory = localStorage.getItem('kpi_history');
-                if (savedHistory) {
-                    try { setHistory(JSON.parse(savedHistory)); } catch (e) { console.error(e); }
-                }
+                if (savedHistory) try { setHistory(JSON.parse(savedHistory)); } catch (e) { }
                 setLoading(false);
-                setTimeout(() => lucide.createIcons(), 100);
             }, []);
 
             useEffect(() => {
@@ -241,18 +199,13 @@
                 return () => clearTimeout(timeoutId);
             }, [formData]);
 
-            useEffect(() => { setTimeout(() => lucide.createIcons(), 100); });
-
             const handleInputChange = (field, value) => {
                 const config = KPI_CONFIG.find(c => c.id === field);
                 let newValue = value;
-                if (config) {
-                    if (value === '') newValue = '';
-                    else {
-                        let numVal = parseFloat(value);
-                        if (config.isPercentage) { if (numVal < 0) numVal = 0; if (numVal > 100) numVal = 100; newValue = numVal; }
-                        if (config.isScore) { if (numVal < 0) numVal = 0; if (numVal > 5) numVal = 5; newValue = numVal; }
-                    }
+                if (config && value !== '') {
+                    let numVal = parseFloat(value);
+                    if (config.isPercentage) { if (numVal < 0) numVal = 0; if (numVal > 100) numVal = 100; newValue = numVal; }
+                    if (config.isScore) { if (numVal < 0) numVal = 0; if (numVal > 5) numVal = 5; newValue = numVal; }
                 }
                 setFormData(prev => ({ ...prev, [field]: newValue }));
             };
@@ -267,7 +220,6 @@
             };
 
             const confirmDelete = () => {
-                if (!itemToDelete) return;
                 const newHistory = history.filter(item => item.id !== itemToDelete.id);
                 setHistory(newHistory);
                 localStorage.setItem('kpi_history', JSON.stringify(newHistory));
@@ -276,7 +228,7 @@
             };
 
             const resetForm = () => {
-                if(confirm("確定要重置表單嗎？這將清除目前的輸入內容。")) {
+                if(confirm("確定要重置表單嗎？")) {
                     setFormData(INITIAL_DATA);
                     localStorage.removeItem('kpi_form_draft');
                 }
@@ -286,7 +238,6 @@
                 const text = `${formData.month || '未填'}｜${formData.branch || '未填'}｜${formData.therapistName || '未填'} ${currentTherapist.title} KPI自評\n\n` +
                     KPI_CONFIG.map(c => `- ${c.label}：${formData[c.id] || '未填'} ${c.unit}`).join('\n') +
                     `\n\n🧠 技術成長：\n${formData.growthFocus || '無'}\n\n🤝 團隊貢獻：\n${formData.teamContribution || '無'}`;
-                
                 const ta = document.createElement("textarea");
                 ta.value = text;
                 ta.style.position = "fixed"; ta.style.left = "-9999px";
@@ -298,23 +249,22 @@
             const downloadImage = async () => {
                 if (!reportRef.current) return;
                 setDownloading(true);
-                
                 try {
-                    // 智能截圖邏輯：強制使用桌面版寬度 (1280px) 進行渲染
                     const canvas = await html2canvas(reportRef.current, {
-                        scale: 2, // 高解析度
-                        useCORS: true, 
-                        allowTaint: true, 
-                        logging: false, 
+                        scale: 2,
+                        useCORS: true,
+                        allowTaint: true,
                         backgroundColor: '#f8fafc',
-                        windowWidth: 1280, // ★ 關鍵：告訴瀏覽器用 1280px 寬度去繪製，這樣就會觸發 lg:grid-cols-12
+                        windowWidth: 1280, // 強制模擬電腦寬度
                         onclone: (clonedDoc) => {
-                            // ★ 關鍵：強制修正複製後的 DOM 容器寬度，確保雙欄排版生效
-                            const mainElement = clonedDoc.querySelector('main');
+                            const mainElement = clonedDoc.getElementById('report-main');
                             if (mainElement) {
-                                mainElement.style.width = '1024px'; 
+                                // 強制撐開寬度，確保雙欄排版
+                                mainElement.style.width = '1024px';
                                 mainElement.style.margin = '0 auto';
                                 mainElement.style.padding = '40px';
+                                const actionButtons = clonedDoc.getElementById('action-buttons-container');
+                                if (actionButtons) actionButtons.style.display = 'none';
                             }
                         }
                     });
@@ -331,26 +281,29 @@
                 <div className="min-h-screen bg-slate-50/50 pb-20 selection:bg-indigo-100 selection:text-indigo-700">
                     <DeleteConfirmModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} onConfirm={confirmDelete} item={itemToDelete} />
                     
+                    {/* Header: 手機版垂直置中排列，電腦版橫向 */}
                     <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/60 sticky top-0 z-20">
-                        {/* 手機版：垂直排列 (flex-col)；電腦版：橫向排列 (md:flex-row) */}
-                        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
-                            
-                            {/* Logo 與 標題區塊 */}
-                            <div className="flex flex-col md:flex-row items-center gap-4 text-center md:text-left w-full md:w-auto">
-                                <img src="https://adlers.tw/wp-content/uploads/2021/01/%E6%9C%AA%E5%91%BD%E5%90%8D-3_%E5%B7%A5%E4%BD%9C%E5%8D%80%E5%9F%9F-1-1.png" alt="Logo" className="h-12 w-auto object-contain shrink-0" />
-                                <div className="min-w-0 flex flex-col justify-center">
-                                    <h1 className="text-xl md:text-lg font-bold text-slate-800 leading-tight whitespace-normal break-words">愛迪樂治療師個人每月KPI自評表</h1>
-                                    <div className="text-xs md:text-[10px] font-medium text-slate-500 mt-2 md:mt-1 whitespace-normal leading-relaxed">
-                                        系統自動算出 KPI 狀態：<br className="block md:hidden"/> 
-                                        <span className="inline-block mt-1 md:mt-0">🟢達標 🟡注意 🔴需支援</span>
+                        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-3">
+                            <div className="flex flex-col items-center gap-2 md:flex-row md:gap-4 w-full md:w-auto">
+                                {/* Line 1: Logo */}
+                                <img src="https://adlers.tw/wp-content/uploads/2021/01/%E6%9C%AA%E5%91%BD%E5%90%8D-3_%E5%B7%A5%E4%BD%9C%E5%8D%80%E5%9F%9F-1-1.png" alt="Logo" className="h-10 md:h-12 w-auto object-contain" />
+                                
+                                <div className="text-center md:text-left flex flex-col items-center md:items-start gap-1">
+                                    {/* Line 2: Title (不換行，自動縮小字體) */}
+                                    <h1 className="text-base sm:text-lg md:text-xl font-bold text-slate-800 whitespace-nowrap">愛迪樂治療師個人每月KPI自評表</h1>
+                                    
+                                    {/* Line 3: Status (不換行，自動縮小字體) */}
+                                    <div className="text-[10px] sm:text-xs font-medium text-slate-500 whitespace-nowrap flex items-center justify-center md:justify-start gap-1">
+                                        <span>系統自動算出 KPI 狀態：</span>
+                                        <span>🟢達標 🟡注意 🔴需支援</span>
                                     </div>
                                 </div>
                             </div>
-
-                            {/* 按鈕區塊 */}
+                            
+                            {/* Line 4: Buttons */}
                             <div className="flex bg-slate-100/80 p-1 rounded-xl shrink-0 w-full md:w-auto justify-center">
-                                <button onClick={() => setView('form')} className={`flex-1 md:flex-none px-6 md:px-3 py-2 md:py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>編輯</button>
-                                <button onClick={() => setView('history')} className={`flex-1 md:flex-none px-6 md:px-3 py-2 md:py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'history' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>紀錄</button>
+                                <button onClick={() => setView('form')} className={`flex-1 md:flex-none px-6 md:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>編輯</button>
+                                <button onClick={() => setView('history')} className={`flex-1 md:flex-none px-6 md:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'history' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>紀錄</button>
                             </div>
                         </div>
                     </header>
@@ -361,67 +314,84 @@
                                 <div className="flex justify-between items-end mb-8">
                                     <h2 className="text-2xl font-bold text-slate-800">歷史存檔</h2>
                                     <button onClick={() => { resetForm(); setView('form'); }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl shadow-lg active:scale-95">
-                                        <i data-lucide="plus" className="w-4 h-4"></i> <span className="hidden sm:inline">新評估</span>
+                                        <Icon name="plus" className="w-4 h-4" /> 新評估
                                     </button>
                                 </div>
                                 {history.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center py-24 bg-white rounded-3xl border border-dashed border-slate-200 text-slate-300">
-                                        <i data-lucide="history" className="w-12 h-12 mb-2"></i>
+                                        <Icon name="clock" className="w-12 h-12 mb-2" />
                                         <p>尚無存檔紀錄</p>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {history.map(record => (
-                                            <HistoryItem key={record.id} item={record} onRequestDelete={(item) => { setItemToDelete(item); setDeleteModalOpen(true); }} onLoad={() => { setFormData(record); setView('form'); }} />
+                                            <div key={record.id} className="group flex items-center justify-between p-5 mb-3 rounded-xl border border-slate-100 bg-white shadow-sm hover:border-indigo-200 hover:shadow-md cursor-pointer transition-all" onClick={() => { setFormData(record); setView('form'); }}>
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-slate-800 text-lg">{record.month}</span>
+                                                        <span className="text-slate-300">|</span>
+                                                        <span className="text-slate-600 font-medium">{record.branch}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                                                        <Icon name="clock" className="w-3 h-3" />
+                                                        <span>{new Date(record.createdAt).toLocaleDateString()}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-sm text-slate-600">{record.therapistName}</span>
+                                                    <button onClick={(e) => { e.stopPropagation(); setItemToDelete(record); setDeleteModalOpen(true); }} className="p-2 text-slate-300 hover:text-rose-500 rounded-full">
+                                                        <Icon name="trash" className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
                                         ))}
                                     </div>
                                 )}
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-500">
+                                {/* Left Column: Form */}
                                 <div className="lg:col-span-7 space-y-6">
-                                    {/* Basic Info */}
                                     <section className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
-                                        <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-bl-full -z-0"></div>
                                         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
                                             <div className="flex flex-col items-center gap-3 shrink-0">
-                                                <div className="w-32 rounded-2xl bg-slate-100 p-1 border-2 border-slate-200 shadow-sm overflow-hidden relative group">
+                                                <div className="w-32 rounded-2xl bg-slate-100 p-1 border-2 border-slate-200 shadow-sm overflow-hidden group">
                                                     <ImageWithSkeleton src={currentTherapist.avatar} alt={currentTherapist.name} className="w-full h-auto rounded-xl bg-slate-200 aspect-[3/4]" />
                                                 </div>
                                                 <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{currentTherapist.type}</span>
                                             </div>
-                                            <div className="flex-1 space-y-5 relative z-10 w-full">
+                                            <div className="flex-1 space-y-5 w-full">
                                                 <div className="flex items-center gap-3 mb-2 pb-2 border-b border-slate-50"><h2 className="text-lg font-bold text-slate-800">基本資料</h2></div>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                                     <div className="space-y-1.5 md:col-span-2">
                                                         <label className="text-xs font-bold text-slate-400 uppercase ml-1">治療師姓名</label>
                                                         <div className="relative">
-                                                            <select value={formData.therapistName} onChange={(e) => handleInputChange('therapistName', e.target.value)} className={`w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold appearance-none text-base ${formData.therapistName ? 'text-slate-700' : 'text-slate-400'}`}>
+                                                            <select value={formData.therapistName} onChange={(e) => handleInputChange('therapistName', e.target.value)} className={`w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold appearance-none ${formData.therapistName ? 'text-slate-700' : 'text-slate-400'}`}>
                                                                 <option value="" disabled hidden>輸入姓名</option>
                                                                 <optgroup label="物理治療師 (PT)">{THERAPISTS.filter(t => t.type === 'PT').map(t => <option key={t.name} value={t.name}>{t.name}</option>)}</optgroup>
                                                                 <optgroup label="職能治療師 (OT)">{THERAPISTS.filter(t => t.type === 'OT').map(t => <option key={t.name} value={t.name}>{t.name}</option>)}</optgroup>
                                                             </select>
-                                                            <i data-lucide="chevron-right" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 rotate-90 pointer-events-none"></i>
+                                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icon name="chevronDown" className="w-4 h-4" /></div>
                                                         </div>
                                                     </div>
                                                     <div className="space-y-1.5">
                                                         <label className="text-xs font-bold text-slate-400 uppercase ml-1">所屬分所</label>
                                                         <div className="relative">
-                                                            <select value={formData.branch} onChange={(e) => handleInputChange('branch', e.target.value)} className={`w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium appearance-none text-base ${formData.branch ? 'text-slate-700' : 'text-slate-400'}`}>
+                                                            <select value={formData.branch} onChange={(e) => handleInputChange('branch', e.target.value)} className={`w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium appearance-none ${formData.branch ? 'text-slate-700' : 'text-slate-400'}`}>
                                                                 <option value="" disabled hidden>點選選擇</option>
                                                                 {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
                                                             </select>
-                                                            <i data-lucide="chevron-right" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 rotate-90 pointer-events-none"></i>
+                                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icon name="chevronDown" className="w-4 h-4" /></div>
                                                         </div>
                                                     </div>
                                                     <div className="space-y-1.5">
                                                         <label className="text-xs font-bold text-slate-400 uppercase ml-1">評估月份</label>
                                                         <div className="relative">
-                                                            <select value={formData.month} onChange={(e) => handleInputChange('month', e.target.value)} className={`w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium appearance-none text-base ${formData.month ? 'text-slate-700' : 'text-slate-400'}`}>
+                                                            <select value={formData.month} onChange={(e) => handleInputChange('month', e.target.value)} className={`w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium appearance-none ${formData.month ? 'text-slate-700' : 'text-slate-400'}`}>
                                                                 <option value="" disabled hidden>點選選擇</option>
                                                                 {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
                                                             </select>
-                                                            <i data-lucide="calendar" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none"></i>
+                                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Icon name="calendar" className="w-4 h-4" /></div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -429,10 +399,9 @@
                                         </div>
                                     </section>
 
-                                    {/* KPI Form */}
                                     <section className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100">
                                         <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-50">
-                                            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600"><i data-lucide="clipboard-list" className="w-5 h-5"></i></div>
+                                            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600"><Icon name="clipboard" className="w-5 h-5" /></div>
                                             <h2 className="text-lg font-bold text-slate-800">量能與品質 KPI</h2>
                                         </div>
                                         <div className="space-y-2">
@@ -455,7 +424,7 @@
                                                                     <p className="text-xs font-medium text-slate-600 font-mono">{config.type === 'lower_better' ? '≤' : '≥'} {config.target}</p>
                                                                 </div>
                                                                 <div className={`flex items-center gap-3 p-1 rounded-lg border transition-colors shadow-sm ${inputClass}`}>
-                                                                    <input type="number" inputMode="decimal" value={formData[config.id]} onChange={(e) => handleInputChange(config.id, e.target.value)} className="w-28 px-2 py-1 text-right font-mono text-lg font-bold bg-transparent outline-none placeholder-slate-400 placeholder:text-sm placeholder:font-normal text-inherit appearance-none" placeholder={config.isScore ? "預設(0-5)" : "預設數值"} />
+                                                                    <input type="number" inputMode="decimal" value={formData[config.id]} onChange={(e) => handleInputChange(config.id, e.target.value)} className="w-28 px-2 py-1 text-right font-mono text-lg font-bold bg-transparent outline-none placeholder-slate-400 placeholder:text-sm text-inherit appearance-none" placeholder={config.isScore ? "預設(0-5)" : "預設數值"} />
                                                                 </div>
                                                                 <div className="w-[68px] flex justify-end"><StatusBadge status={status} /></div>
                                                             </div>
@@ -466,20 +435,19 @@
                                         </div>
                                     </section>
 
-                                    {/* Qualitative */}
                                     <section className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100">
                                         <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-50">
-                                            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600"><i data-lucide="trending-up" className="w-5 h-5"></i></div>
+                                            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600"><Icon name="trending" className="w-5 h-5" /></div>
                                             <h2 className="text-lg font-bold text-slate-800">成長與貢獻</h2>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div className="space-y-2">
                                                 <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>本月技術成長重點</label>
-                                                <textarea rows={6} value={formData.growthFocus} onChange={(e) => handleInputChange('growthFocus', e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-all text-base" placeholder="請條列式紀錄..."></textarea>
+                                                <textarea rows={6} value={formData.growthFocus} onChange={(e) => handleInputChange('growthFocus', e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none text-base" placeholder="請條列式紀錄..."></textarea>
                                             </div>
                                             <div className="space-y-2">
                                                 <label className="text-sm font-bold text-slate-700 flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-teal-400"></span>本月團隊貢獻與協作</label>
-                                                <textarea rows={6} value={formData.teamContribution} onChange={(e) => handleInputChange('teamContribution', e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-all text-base" placeholder="請條列式紀錄..."></textarea>
+                                                <textarea rows={6} value={formData.teamContribution} onChange={(e) => handleInputChange('teamContribution', e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none text-base" placeholder="請條列式紀錄..."></textarea>
                                             </div>
                                         </div>
                                     </section>
@@ -488,16 +456,16 @@
                                 {/* Right Column */}
                                 <div className="lg:col-span-5 space-y-6">
                                     <div className="sticky top-24 space-y-6">
-                                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+                                        <div id="action-buttons-container" className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
                                             <div className="flex gap-2 w-full sm:w-auto">
                                                 <button onClick={resetForm} className="flex-1 sm:flex-none text-slate-400 hover:text-slate-600 text-xs font-semibold px-4 py-2 border border-transparent hover:border-slate-100 rounded-lg transition-colors">重置</button>
                                                 <button onClick={downloadImage} disabled={downloading} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold transition-colors disabled:opacity-50">
-                                                    {downloading ? <i data-lucide="loader-2" className="animate-spin w-4 h-4"></i> : <i data-lucide="download" className="w-4 h-4"></i>}
+                                                    {downloading ? <Icon name="loader" className="animate-spin w-4 h-4" /> : <Icon name="download" className="w-4 h-4" />}
                                                     <span className="text-sm">下載圖片</span>
                                                 </button>
                                             </div>
                                             <button onClick={handleSave} disabled={saveStatus === 'saving' || saveStatus === 'success'} className={`w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all active:scale-95 ${saveStatus === 'success' ? 'bg-emerald-500' : 'bg-slate-900 hover:bg-slate-800'}`}>
-                                                {saveStatus === 'saving' ? <span className="flex items-center gap-2 text-sm"><i data-lucide="loader-2" className="animate-spin w-4 h-4"></i>保存中</span> : saveStatus === 'success' ? <span className="flex items-center gap-2 text-sm"><i data-lucide="check" className="w-4 h-4"></i>已保存</span> : <span className="text-sm">保存紀錄</span>}
+                                                {saveStatus === 'saving' ? <span className="flex items-center gap-2 text-sm"><Icon name="loader" className="animate-spin w-4 h-4" />保存中</span> : saveStatus === 'success' ? <span className="flex items-center gap-2 text-sm"><Icon name="check" className="w-4 h-4" />已保存</span> : <span className="text-sm">保存紀錄</span>}
                                             </button>
                                         </div>
 
@@ -521,9 +489,9 @@
                                         {/* Summary */}
                                         <section className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden group">
                                             <div className="bg-slate-50/80 backdrop-blur-sm border-b border-slate-100 p-4 flex items-center justify-between">
-                                                <div className="flex items-center gap-2.5"><div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-slate-600"><i data-lucide="file-text" className="w-4 h-4"></i></div><h2 className="text-sm font-bold text-slate-700">本月評估摘要</h2></div>
+                                                <div className="flex items-center gap-2.5"><div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-slate-600"><Icon name="copy" className="w-4 h-4" /></div><h2 className="text-sm font-bold text-slate-700">本月評估摘要</h2></div>
                                                 <button onClick={copySummary} disabled={copyStatus === 'copied'} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${copyStatus === 'copied' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}`}>
-                                                    {copyStatus === 'copied' ? <><i data-lucide="check" className="w-3 h-3"></i>已複製</> : <><i data-lucide="copy" className="w-3 h-3"></i>複製內容</>}
+                                                    {copyStatus === 'copied' ? <><Icon name="check" className="w-3 h-3" />已複製</> : <><Icon name="copy" className="w-3 h-3" />複製內容</>}
                                                 </button>
                                             </div>
                                             <div className="p-6 bg-white relative min-h-[300px]">
