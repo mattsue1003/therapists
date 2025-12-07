@@ -38,7 +38,6 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // 確保所有變數從全域物件中正確取得
         const { useState, useEffect, useMemo, useRef } = React;
         const { 
             LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -300,23 +299,19 @@
                 if (!reportRef.current) return;
                 setDownloading(true);
                 
-                // IMPORTANT: Mobile download strategy
-                // To download as "Desktop/A4" layout on mobile, we need to trick html2canvas
-                // by specifying a large windowWidth and fixing the container width during clone.
                 try {
+                    // 智能截圖邏輯：強制使用桌面版寬度 (1280px) 進行渲染
                     const canvas = await html2canvas(reportRef.current, {
-                        scale: 2, // High resolution
+                        scale: 2, // 高解析度
                         useCORS: true, 
                         allowTaint: true, 
                         logging: false, 
                         backgroundColor: '#f8fafc',
-                        windowWidth: 1280, // Simulate desktop window width
+                        windowWidth: 1280, // ★ 關鍵：告訴瀏覽器用 1280px 寬度去繪製，這樣就會觸發 lg:grid-cols-12
                         onclone: (clonedDoc) => {
-                            // Find the main container in the cloned document
-                            // Since we didn't put an ID on 'main', we select it by tag or add ID below
+                            // ★ 關鍵：強制修正複製後的 DOM 容器寬度，確保雙欄排版生效
                             const mainElement = clonedDoc.querySelector('main');
                             if (mainElement) {
-                                // Force width to desktop size so grid classes (lg:grid-cols-12) work
                                 mainElement.style.width = '1024px'; 
                                 mainElement.style.margin = '0 auto';
                                 mainElement.style.padding = '40px';
@@ -337,19 +332,25 @@
                     <DeleteConfirmModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} onConfirm={confirmDelete} item={itemToDelete} />
                     
                     <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/60 sticky top-0 z-20">
-                        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-                            <div className="flex items-center gap-3 overflow-hidden">
-                                <img src="https://adlers.tw/wp-content/uploads/2021/01/%E6%9C%AA%E5%91%BD%E5%90%8D-3_%E5%B7%A5%E4%BD%9C%E5%8D%80%E5%9F%9F-1-1.png" alt="Logo" className="h-10 w-auto object-contain shrink-0" />
-                                <div className="min-w-0 flex flex-col">
-                                    <h1 className="text-lg font-bold text-slate-800 leading-none truncate">愛迪樂治療師個人每月KPI自評表</h1>
-                                    <div className="text-[10px] font-medium text-slate-500 mt-1 whitespace-normal leading-tight">
-                                        系統自動算出 KPI 狀態：🟢達標 🟡注意 🔴需支援
+                        {/* 手機版：垂直排列 (flex-col)；電腦版：橫向排列 (md:flex-row) */}
+                        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                            
+                            {/* Logo 與 標題區塊 */}
+                            <div className="flex flex-col md:flex-row items-center gap-4 text-center md:text-left w-full md:w-auto">
+                                <img src="https://adlers.tw/wp-content/uploads/2021/01/%E6%9C%AA%E5%91%BD%E5%90%8D-3_%E5%B7%A5%E4%BD%9C%E5%8D%80%E5%9F%9F-1-1.png" alt="Logo" className="h-12 w-auto object-contain shrink-0" />
+                                <div className="min-w-0 flex flex-col justify-center">
+                                    <h1 className="text-xl md:text-lg font-bold text-slate-800 leading-tight whitespace-normal break-words">愛迪樂治療師個人每月KPI自評表</h1>
+                                    <div className="text-xs md:text-[10px] font-medium text-slate-500 mt-2 md:mt-1 whitespace-normal leading-relaxed">
+                                        系統自動算出 KPI 狀態：<br className="block md:hidden"/> 
+                                        <span className="inline-block mt-1 md:mt-0">🟢達標 🟡注意 🔴需支援</span>
                                     </div>
                                 </div>
                             </div>
-                            <div className="flex bg-slate-100/80 p-1 rounded-xl shrink-0 ml-2">
-                                <button onClick={() => setView('form')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>編輯</button>
-                                <button onClick={() => setView('history')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'history' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>紀錄</button>
+
+                            {/* 按鈕區塊 */}
+                            <div className="flex bg-slate-100/80 p-1 rounded-xl shrink-0 w-full md:w-auto justify-center">
+                                <button onClick={() => setView('form')} className={`flex-1 md:flex-none px-6 md:px-3 py-2 md:py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>編輯</button>
+                                <button onClick={() => setView('history')} className={`flex-1 md:flex-none px-6 md:px-3 py-2 md:py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'history' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>紀錄</button>
                             </div>
                         </div>
                     </header>
@@ -360,7 +361,7 @@
                                 <div className="flex justify-between items-end mb-8">
                                     <h2 className="text-2xl font-bold text-slate-800">歷史存檔</h2>
                                     <button onClick={() => { resetForm(); setView('form'); }} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl shadow-lg active:scale-95">
-                                        <i data-lucide="plus" className="w-4 h-4"></i> 新評估
+                                        <i data-lucide="plus" className="w-4 h-4"></i> <span className="hidden sm:inline">新評估</span>
                                     </button>
                                 </div>
                                 {history.length === 0 ? (
@@ -382,14 +383,14 @@
                                     {/* Basic Info */}
                                     <section className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden">
                                         <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-bl-full -z-0"></div>
-                                        <div className="flex items-start gap-6">
+                                        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
                                             <div className="flex flex-col items-center gap-3 shrink-0">
                                                 <div className="w-32 rounded-2xl bg-slate-100 p-1 border-2 border-slate-200 shadow-sm overflow-hidden relative group">
                                                     <ImageWithSkeleton src={currentTherapist.avatar} alt={currentTherapist.name} className="w-full h-auto rounded-xl bg-slate-200 aspect-[3/4]" />
                                                 </div>
                                                 <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{currentTherapist.type}</span>
                                             </div>
-                                            <div className="flex-1 space-y-5 relative z-10">
+                                            <div className="flex-1 space-y-5 relative z-10 w-full">
                                                 <div className="flex items-center gap-3 mb-2 pb-2 border-b border-slate-50"><h2 className="text-lg font-bold text-slate-800">基本資料</h2></div>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                                     <div className="space-y-1.5 md:col-span-2">
@@ -448,7 +449,7 @@
                                                                 </div>
                                                                 <p className="text-xs text-slate-400 truncate">{config.desc}</p>
                                                             </div>
-                                                            <div className="flex items-center gap-4">
+                                                            <div className="flex items-center justify-between w-full sm:w-auto gap-4 mt-2 sm:mt-0">
                                                                 <div className="text-right hidden sm:block">
                                                                     <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">目標</p>
                                                                     <p className="text-xs font-medium text-slate-600 font-mono">{config.type === 'lower_better' ? '≤' : '≥'} {config.target}</p>
