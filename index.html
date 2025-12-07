@@ -2,8 +2,6 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <!-- 關鍵：繞過圖片防盜連機制，讓照片能顯示 -->
-    <meta name="referrer" content="no-referrer">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>愛迪樂治療師個人每月KPI自評表</title>
     
@@ -30,15 +28,22 @@
         /* 避免 iOS 輸入框縮放 */
         input, select, textarea { font-size: 16px !important; } 
         
-        /* 手機版標題自動縮放技巧 */
+        /* 手機版標題自動縮放技巧：使用 clamp 動態調整 */
         .responsive-title {
-            font-size: clamp(1rem, 4vw, 1.25rem);
+            font-size: clamp(0.9rem, 3.5vw, 1.25rem); /* 讓字體隨寬度變小，確保不換行 */
             white-space: nowrap;
             overflow: visible;
         }
         .responsive-status {
-            font-size: clamp(0.75rem, 3vw, 0.875rem);
+            font-size: clamp(0.7rem, 3vw, 0.875rem);
             white-space: nowrap;
+        }
+
+        /* 截圖時用於替代 select 的純文字樣式 */
+        .print-select-value {
+            @apply w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base text-slate-700 font-bold;
+            display: none; /* 預設隱藏 */
+            line-height: 1.5; /* 增加行高避免裁切 */
         }
     </style>
 </head>
@@ -109,10 +114,14 @@
         const INITIAL_DATA = { therapistName: '', branch: '', month: '', occupancy: '', newCases: '', regularClients: '', totalHours: '', conversionRate: '', returnRate: '', satisfaction: '', complaints: '', growthFocus: '', teamContribution: '' };
 
         // --- Helper Functions ---
-        // ★ 新增：將網路圖片轉換為 Base64，解決截圖時的跨域問題 ★
+        // ★ 關鍵修正：使用 images.weserv.nl 代理服務繞過 CORS ★
         const getBase64FromUrl = async (url) => {
+            // 移除 protocol (https://) 因為 weserv 只需要網址部分，或者直接編碼整個網址
+            const proxyUrl = `https://wsrv.nl/?url=${encodeURIComponent(url)}&output=png`;
+            
             try {
-                const response = await fetch(url);
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error('Proxy fetch failed');
                 const blob = await response.blob();
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader();
@@ -121,8 +130,8 @@
                     reader.readAsDataURL(blob);
                 });
             } catch (error) {
-                console.error("Error converting image to base64:", error);
-                return url; // 發生錯誤時回傳原網址，盡力而為
+                console.error("Image load failed via proxy:", error);
+                throw error;
             }
         };
 
@@ -163,29 +172,37 @@
         // --- Sub Components ---
         const StatusBadge = ({ status }) => <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${status.color} transition-colors min-w-[60px] text-center`}>{status.label}</span>;
 
-        // ★ 修改：使用 Base64 顯示圖片 ★
         const ImageWithSkeleton = ({ src, alt, className }) => {
             const [loaded, setLoaded] = useState(false);
             const [error, setError] = useState(false);
             const [base64Src, setBase64Src] = useState(null);
+            const mountedRef = useRef(true);
 
             useEffect(() => {
+                mountedRef.current = true;
                 setLoaded(false);
                 setError(false);
                 setBase64Src(null);
                 if (src) {
-                    getBase64FromUrl(src).then(base64 => {
-                        setBase64Src(base64);
-                        setLoaded(true); // 設置為 true，因為我們已經拿到了 base64
-                    });
+                    getBase64FromUrl(src)
+                        .then(base64 => {
+                            if (mountedRef.current) {
+                                setBase64Src(base64);
+                                setLoaded(true);
+                            }
+                        })
+                        .catch(() => {
+                            if (mountedRef.current) setError(true);
+                        });
                 }
+                return () => { mountedRef.current = false; };
             }, [src]);
 
             return (
                 <div className={`relative overflow-hidden ${className}`}>
                     {!loaded && !error && <div className="absolute inset-0 bg-slate-200 animate-pulse flex items-center justify-center"><Icon name="loader" className="animate-spin text-slate-400 w-6 h-6" /></div>}
                     {!error && base64Src && <img src={base64Src} alt={alt} className={`w-full h-full object-cover transition-opacity duration-500 opacity-100`} onError={() => setError(true)} />}
-                    {(error || !src) && <div className="absolute inset-0 bg-slate-100 flex items-center justify-center text-slate-300 flex-col gap-1"><Icon name="user" className="w-8 h-8" /><span className="text-[10px]">無照片</span></div>}
+                    {(error || !src || (!loaded && error)) && <div className="absolute inset-0 bg-slate-100 flex items-center justify-center text-slate-300 flex-col gap-1"><Icon name="user" className="w-8 h-8" /><span className="text-[10px]">無照片</span></div>}
                 </div>
             );
         };
@@ -291,26 +308,57 @@
                 if (!reportRef.current) return;
                 setDownloading(true);
                 try {
+                    // 1. 準備替代的純文字元素
+                    const selects = reportRef.current.querySelectorAll('select');
+                    const replacements = [];
+                    selects.forEach(select => {
+                        const textDiv = document.createElement('div');
+                        textDiv.className = 'print-select-value';
+                        // 獲取選中的文字
+                        const selectedText = select.options[select.selectedIndex]?.text || select.querySelector('option[disabled]')?.text || '';
+                        textDiv.textContent = selectedText;
+                        replacements.push({ select, textDiv });
+                    });
+
+                    // 2. 獲取 Proxy 圖片 (Logo) - 如果 Logo 也是跨域，也需要處理
+                    // 這裡假設 Logo 是我們寫死在代碼裡的，如果也是 adlers.tw，需要用 getBase64FromUrl 替換
+                    // 目前代碼中 Logo 是 img tag，html2canvas 會嘗試讀取。
+                    // 為了保險，我們可以在這裡對 Logo 做同樣的 Base64 替換，或者依賴 allowTaint。
+                    // 由於前面 ImageWithSkeleton 已經處理了治療師照片，這裡主要關注 Logo。
+                    
                     const canvas = await html2canvas(reportRef.current, {
                         scale: 2,
                         useCORS: true,
                         allowTaint: true,
                         backgroundColor: '#f8fafc',
-                        // windowWidth: 1280, // 移除此行，避免與 onclone 衝突
                         onclone: (clonedDoc) => {
                             const mainElement = clonedDoc.getElementById('report-main');
                             if (mainElement) {
-                                // 強制設定寬度為 1024px，觸發大螢幕排版
+                                // 替換 select
+                                replacements.forEach(({ select, textDiv }) => {
+                                    const parentPath = getDomPath(select, reportRef.current);
+                                    const clonedSelect = parentPath.reduce((acc, index) => acc.children[index], clonedDoc.getElementById('report-main'));
+                                    if (clonedSelect && clonedSelect.parentNode) {
+                                        textDiv.style.display = 'block';
+                                        clonedSelect.parentNode.replaceChild(textDiv, clonedSelect);
+                                        const chevron = textDiv.parentNode.querySelector('svg');
+                                        if (chevron) chevron.remove();
+                                    }
+                                });
+
+                                // 強制設定寬度為 1024px
                                 mainElement.style.width = '1024px';
                                 mainElement.style.margin = '0 auto';
                                 mainElement.style.padding = '40px';
 
-                                // ★ 新增：強制所有元素顯示溢出內容，防止文字被切斷 ★
+                                // ★ 關鍵修正：增加 CSS 確保文字不被裁切 ★
                                 const style = clonedDoc.createElement('style');
-                                style.innerHTML = '* { overflow: visible !important; }';
+                                style.innerHTML = `
+                                    * { overflow: visible !important; }
+                                    .print-select-value { line-height: 1.5 !important; padding-top: 0.625rem; padding-bottom: 0.625rem; height: auto !important; }
+                                `;
                                 clonedDoc.head.appendChild(style);
                                 
-                                // 修正下載按鈕的隱藏方式
                                 const actionButtons = clonedDoc.getElementById('action-buttons-container');
                                 if (actionButtons) actionButtons.style.display = 'none';
                             }
@@ -320,7 +368,18 @@
                     link.href = canvas.toDataURL("image/png");
                     link.download = `${formData.month || 'KPI'}_${formData.therapistName || '自評表'}.png`;
                     link.click();
-                } catch (e) { console.error(e); alert("下載失敗，請稍後再試"); } finally { setDownloading(false); }
+                } catch (e) { console.error("Download failed:", e); alert("下載失敗，請稍後再試"); } finally { setDownloading(false); }
+            };
+
+            const getDomPath = (el, root) => {
+                const path = [];
+                let current = el;
+                while (current !== root && current.parentNode) {
+                    const index = Array.from(current.parentNode.children).indexOf(current);
+                    path.unshift(index);
+                    current = current.parentNode;
+                }
+                return path;
             };
 
             if (loading) return <div className="flex h-screen items-center justify-center text-slate-400">載入中...</div>;
@@ -329,18 +388,15 @@
                 <div className="min-h-screen bg-slate-50/50 pb-20 selection:bg-indigo-100 selection:text-indigo-700">
                     <DeleteConfirmModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} onConfirm={confirmDelete} item={itemToDelete} />
                     
-                    {/* Header: 手機版垂直堆疊，確保不換行；電腦版橫向 */}
                     <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/60 sticky top-0 z-20">
                         <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
                             <div className="flex flex-col items-center gap-2 md:flex-row md:gap-4 w-full md:w-auto">
-                                {/* 行1: Logo */}
-                                <img src="https://adlers.tw/wp-content/uploads/2021/01/%E6%9C%AA%E5%91%BD%E5%90%8D-3_%E5%B7%A5%E4%BD%9C%E5%8D%80%E5%9F%9F-1-1.png" alt="Logo" className="h-10 md:h-12 w-auto object-contain" />
+                                {/* Logo: 也加上 Proxy 處理，確保下載時不會因為跨域而消失 (雖然 html2canvas useCORS 可能會處理，但保險起見) */}
+                                {/* 這裡為了簡單，我們直接用 img 標籤，如果下載時 Logo 還是不見，可以考慮也用 ImageWithSkeleton */}
+                                <img src="https://images.weserv.nl/?url=https://adlers.tw/wp-content/uploads/2021/01/%E6%9C%AA%E5%91%BD%E5%90%8D-3_%E5%B7%A5%E4%BD%9C%E5%8D%80%E5%9F%9F-1-1.png&output=png" alt="Logo" className="h-10 md:h-12 w-auto object-contain" crossorigin="anonymous" />
                                 
                                 <div className="text-center md:text-left flex flex-col items-center md:items-start gap-1 w-full">
-                                    {/* 行2: 標題 (responsive-title class 控制字體大小，確保一行) */}
                                     <h1 className="font-bold text-slate-800 responsive-title">愛迪樂治療師個人每月KPI自評表</h1>
-                                    
-                                    {/* 行3: 狀態 (responsive-status class) */}
                                     <div className="font-medium text-slate-500 responsive-status flex items-center justify-center md:justify-start gap-1">
                                         <span>系統自動算出 KPI 狀態：</span>
                                         <span>🟢達標 🟡注意 🔴需支援</span>
@@ -348,7 +404,6 @@
                                 </div>
                             </div>
                             
-                            {/* 行4: 按鈕 */}
                             <div className="flex bg-slate-100/80 p-1 rounded-xl shrink-0 w-full md:w-auto justify-center max-w-[300px] md:max-w-none mx-auto md:mx-0">
                                 <button onClick={() => setView('form')} className={`flex-1 md:flex-none px-6 md:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>編輯</button>
                                 <button onClick={() => setView('history')} className={`flex-1 md:flex-none px-6 md:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'history' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>紀錄</button>
