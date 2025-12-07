@@ -2,6 +2,8 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
+    <!-- 關鍵：繞過圖片防盜連機制，讓照片能顯示 -->
+    <meta name="referrer" content="no-referrer">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>愛迪樂治療師個人每月KPI自評表</title>
     
@@ -16,17 +18,28 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.12.7/Recharts.min.js"></script>
     
-    <!-- 4. Babel (JSX 編譯) -->
+    <!-- 4. Babel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     
-    <!-- 5. html2canvas (截圖工具) -->
+    <!-- 5. html2canvas -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; -webkit-font-smoothing: antialiased; }
-        /* 避免 iOS Safari 輸入框縮放 */
+        /* 避免 iOS 輸入框縮放 */
         input, select, textarea { font-size: 16px !important; } 
+        
+        /* 手機版標題自動縮放技巧：使用 container queries 概念的替代方案 */
+        .responsive-title {
+            font-size: clamp(1rem, 4vw, 1.25rem); /* 最小 16px, 最大 20px, 中間隨寬度變化 */
+            white-space: nowrap;
+            overflow: visible;
+        }
+        .responsive-status {
+            font-size: clamp(0.75rem, 3vw, 0.875rem);
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -35,7 +48,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- 內建圖示元件 (已修正 JSX 語法錯誤) ---
+        // --- 內建圖示元件 (已修復 JSX 多路徑包覆問題) ---
         const Icon = ({ name, className }) => {
             const icons = {
                 plus: <path d="M5 12h14M12 5v14" />,
@@ -43,7 +56,7 @@
                 save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8" />,
                 download: <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />,
                 check: <path d="M20 6 9 17l-5-5" />,
-                // 修正：多個路徑必須包在 Fragment <>...</> 中
+                // 修正：多路徑圖示必須包在 <React.Fragment> 或 <> 中
                 copy: <><rect width="13" height="13" x="9" y="9" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
                 user: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
                 clock: <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
@@ -178,9 +191,7 @@
             const reportRef = useRef(null);
             const currentTherapist = useMemo(() => getTherapistInfo(formData.therapistName), [formData.therapistName]);
             
-            // 安全獲取 Recharts 元件
             const RechartsComponents = useMemo(() => {
-                // 如果 window.Recharts 尚未載入，提供一個空殼避免報錯，等載入後再渲染
                 return window.Recharts || { ResponsiveContainer: 'div', RadarChart: 'div', Radar: 'div', PolarGrid: 'div', PolarAngleAxis: 'div', PolarRadiusAxis: 'div', Tooltip: 'div' };
             }, []);
             const { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Tooltip } = RechartsComponents;
@@ -255,14 +266,16 @@
                         useCORS: true,
                         allowTaint: true,
                         backgroundColor: '#f8fafc',
-                        windowWidth: 1280, // 強制模擬電腦寬度
+                        windowWidth: 1280, // 強制模擬電腦寬度，確保雙欄
                         onclone: (clonedDoc) => {
                             const mainElement = clonedDoc.getElementById('report-main');
                             if (mainElement) {
-                                // 強制撐開寬度，確保雙欄排版
+                                // 強制設定寬度為 1024px，觸發大螢幕排版
                                 mainElement.style.width = '1024px';
                                 mainElement.style.margin = '0 auto';
                                 mainElement.style.padding = '40px';
+                                
+                                // 修正下載按鈕的隱藏方式
                                 const actionButtons = clonedDoc.getElementById('action-buttons-container');
                                 if (actionButtons) actionButtons.style.display = 'none';
                             }
@@ -281,27 +294,27 @@
                 <div className="min-h-screen bg-slate-50/50 pb-20 selection:bg-indigo-100 selection:text-indigo-700">
                     <DeleteConfirmModal isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} onConfirm={confirmDelete} item={itemToDelete} />
                     
-                    {/* Header: 手機版垂直置中排列，電腦版橫向 */}
+                    {/* Header: 手機版垂直堆疊，確保不換行；電腦版橫向 */}
                     <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/60 sticky top-0 z-20">
-                        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-3">
+                        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
                             <div className="flex flex-col items-center gap-2 md:flex-row md:gap-4 w-full md:w-auto">
-                                {/* Line 1: Logo */}
+                                {/* 行1: Logo */}
                                 <img src="https://adlers.tw/wp-content/uploads/2021/01/%E6%9C%AA%E5%91%BD%E5%90%8D-3_%E5%B7%A5%E4%BD%9C%E5%8D%80%E5%9F%9F-1-1.png" alt="Logo" className="h-10 md:h-12 w-auto object-contain" />
                                 
-                                <div className="text-center md:text-left flex flex-col items-center md:items-start gap-1">
-                                    {/* Line 2: Title (不換行，自動縮小字體) */}
-                                    <h1 className="text-base sm:text-lg md:text-xl font-bold text-slate-800 whitespace-nowrap">愛迪樂治療師個人每月KPI自評表</h1>
+                                <div className="text-center md:text-left flex flex-col items-center md:items-start gap-1 w-full">
+                                    {/* 行2: 標題 (responsive-title class 控制字體大小，確保一行) */}
+                                    <h1 className="font-bold text-slate-800 responsive-title">愛迪樂治療師個人每月KPI自評表</h1>
                                     
-                                    {/* Line 3: Status (不換行，自動縮小字體) */}
-                                    <div className="text-[10px] sm:text-xs font-medium text-slate-500 whitespace-nowrap flex items-center justify-center md:justify-start gap-1">
+                                    {/* 行3: 狀態 (responsive-status class) */}
+                                    <div className="font-medium text-slate-500 responsive-status flex items-center justify-center md:justify-start gap-1">
                                         <span>系統自動算出 KPI 狀態：</span>
                                         <span>🟢達標 🟡注意 🔴需支援</span>
                                     </div>
                                 </div>
                             </div>
                             
-                            {/* Line 4: Buttons */}
-                            <div className="flex bg-slate-100/80 p-1 rounded-xl shrink-0 w-full md:w-auto justify-center">
+                            {/* 行4: 按鈕 */}
+                            <div className="flex bg-slate-100/80 p-1 rounded-xl shrink-0 w-full md:w-auto justify-center max-w-[300px] md:max-w-none mx-auto md:mx-0">
                                 <button onClick={() => setView('form')} className={`flex-1 md:flex-none px-6 md:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'form' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>編輯</button>
                                 <button onClick={() => setView('history')} className={`flex-1 md:flex-none px-6 md:px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${view === 'history' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>紀錄</button>
                             </div>
