@@ -224,7 +224,6 @@
             const currentTherapist = useMemo(() => getTherapistInfo(formData.therapistName), [formData.therapistName]);
             const radarData = useMemo(() => KPI_CONFIG.map(c => ({ subject: c.label, A: normalizeForChart(formData[c.id], c), fullMark: 100 })), [formData]);
 
-            // Load Data from LocalStorage
             useEffect(() => {
                 const savedDraft = localStorage.getItem('kpi_form_draft');
                 if (savedDraft) {
@@ -238,13 +237,11 @@
                 setTimeout(() => lucide.createIcons(), 100);
             }, []);
 
-            // Auto-save Draft
             useEffect(() => {
                 const timeoutId = setTimeout(() => localStorage.setItem('kpi_form_draft', JSON.stringify(formData)), 500);
                 return () => clearTimeout(timeoutId);
             }, [formData]);
 
-            // Re-render icons on updates
             useEffect(() => { setTimeout(() => lucide.createIcons(), 100); });
 
             const handleInputChange = (field, value) => {
@@ -302,16 +299,35 @@
             const downloadImage = async () => {
                 if (!reportRef.current) return;
                 setDownloading(true);
+                
+                // IMPORTANT: Mobile download strategy
+                // To download as "Desktop/A4" layout on mobile, we need to trick html2canvas
+                // by specifying a large windowWidth and fixing the container width during clone.
                 try {
                     const canvas = await html2canvas(reportRef.current, {
-                        scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#f8fafc',
-                        scrollY: -window.scrollY, windowWidth: reportRef.current.scrollWidth
+                        scale: 2, // High resolution
+                        useCORS: true, 
+                        allowTaint: true, 
+                        logging: false, 
+                        backgroundColor: '#f8fafc',
+                        windowWidth: 1280, // Simulate desktop window width
+                        onclone: (clonedDoc) => {
+                            // Find the main container in the cloned document
+                            // Since we didn't put an ID on 'main', we select it by tag or add ID below
+                            const mainElement = clonedDoc.querySelector('main');
+                            if (mainElement) {
+                                // Force width to desktop size so grid classes (lg:grid-cols-12) work
+                                mainElement.style.width = '1024px'; 
+                                mainElement.style.margin = '0 auto';
+                                mainElement.style.padding = '40px';
+                            }
+                        }
                     });
                     const link = document.createElement("a");
                     link.href = canvas.toDataURL("image/png");
                     link.download = `${formData.month || 'KPI'}_${formData.therapistName || '自評表'}.png`;
                     link.click();
-                } catch (e) { console.error(e); alert("下載失敗"); } finally { setDownloading(false); }
+                } catch (e) { console.error(e); alert("下載失敗，請稍後再試"); } finally { setDownloading(false); }
             };
 
             if (loading) return <div className="flex h-screen items-center justify-center text-slate-400">載入中...</div>;
@@ -324,11 +340,10 @@
                         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
                             <div className="flex items-center gap-3 overflow-hidden">
                                 <img src="https://adlers.tw/wp-content/uploads/2021/01/%E6%9C%AA%E5%91%BD%E5%90%8D-3_%E5%B7%A5%E4%BD%9C%E5%8D%80%E5%9F%9F-1-1.png" alt="Logo" className="h-10 w-auto object-contain shrink-0" />
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex flex-col">
                                     <h1 className="text-lg font-bold text-slate-800 leading-none truncate">愛迪樂治療師個人每月KPI自評表</h1>
-                                    <div className="text-[10px] font-medium text-slate-500 mt-1 truncate">
-                                        <span className="hidden sm:inline">系統自動算出 KPI 狀態：</span>
-                                        <span className="ml-1">🟢達標 🟡注意 🔴需支援</span>
+                                    <div className="text-[10px] font-medium text-slate-500 mt-1 whitespace-normal leading-tight">
+                                        系統自動算出 KPI 狀態：🟢達標 🟡注意 🔴需支援
                                     </div>
                                 </div>
                             </div>
@@ -339,7 +354,7 @@
                         </div>
                     </header>
 
-                    <main className="max-w-6xl mx-auto px-4 py-8" ref={view === 'form' ? reportRef : null}>
+                    <main id="report-main" className="max-w-6xl mx-auto px-4 py-8" ref={view === 'form' ? reportRef : null}>
                         {view === 'history' ? (
                             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <div className="flex justify-between items-end mb-8">
